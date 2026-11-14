@@ -103,11 +103,16 @@ public final class KnotInjector {
             if (delegate == null) return null;
 
             if (getMixinTransformerMethod == null) {
-                for (Method m : delegate.getClass().getDeclaredMethods()) {
-                    if (m.getName().equals("getMixinTransformer") && m.getParameterCount() == 0) {
-                        getMixinTransformerMethod = m;
-                        getMixinTransformerMethod.setAccessible(true);
-                        break;
+                try {
+                    getMixinTransformerMethod = delegate.getClass().getMethod("getMixinTransformer");
+                    getMixinTransformerMethod.setAccessible(true);
+                } catch (NoSuchMethodException ignored) {
+                    for (Method m : delegate.getClass().getDeclaredMethods()) {
+                        if (m.getName().equals("getMixinTransformer") && m.getParameterCount() == 0) {
+                            getMixinTransformerMethod = m;
+                            getMixinTransformerMethod.setAccessible(true);
+                            break;
+                        }
                     }
                 }
             }

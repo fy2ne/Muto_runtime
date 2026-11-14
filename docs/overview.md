@@ -21,7 +21,7 @@ repositories {
 }
 
 dependencies {
-    modImplementation "me.fy2ne:muto:0.3.0-beta+26.x"
+    modImplementation "me.fy2ne:muto:0.1.0-beta+26.x"
 }
 ```
 
@@ -29,6 +29,6 @@ dependencies {
 Declare a soft or hard dependency:
 ```json
 "depends": {
-    "muto": "~0.3.0-beta"
+    "muto": "~0.1.0-beta"
 }
 ```

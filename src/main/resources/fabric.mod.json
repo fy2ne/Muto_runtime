@@ -9,13 +9,16 @@
   ],
   "contact": {
     "homepage": "https://muto.fy2ne.me",
-    "sources": "https://github.com/fy2ne/muto",
-    "issues": "https://github.com/fy2ne/muto/issues"
+    "sources": "https://github.com/fy2ne/Muto-Runtime",
+    "issues": "https://github.com/fy2ne/Muto-Runtime/issues"
   },
   "license": "LGPL-3.0-only",
   "icon": "assets/muto/icon.png",
   "environment": "client",
   "entrypoints": {
+    "preLaunch": [
+      "me.fy2ne.muto.MutoMod"
+    ],
     "client": [
       "me.fy2ne.muto.MutoMod"
     ]

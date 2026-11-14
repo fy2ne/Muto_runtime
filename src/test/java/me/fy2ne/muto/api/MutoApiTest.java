@@ -70,4 +70,12 @@ class MutoApiTest {
         Assertions.assertTrue(startFired.get());
         Assertions.assertTrue(finishFired.get());
     }
+
+    @Test
+    void testWatcherMethodsRemovedFromMutoApi() {
+        for (java.lang.reflect.Method m : MutoApi.class.getDeclaredMethods()) {
+            String name = m.getName();
+            Assertions.assertFalse(name.contains("Watcher"), "MutoApi must not expose watcher methods: " + name);
+        }
+    }
 }

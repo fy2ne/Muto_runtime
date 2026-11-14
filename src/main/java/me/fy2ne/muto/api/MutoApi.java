@@ -1,7 +1,5 @@
 package me.fy2ne.muto.api;
 
-import me.fy2ne.muto.automation.ModsFolderWatcher;
-import me.fy2ne.muto.automation.MutoTriggerWatcher;
 import me.fy2ne.muto.boundary.ReloadBoundaryManager;
 import me.fy2ne.muto.engine.ReloadEngine;
 import me.fy2ne.muto.engine.ReloadHistoryEntry;
@@ -53,6 +51,38 @@ public final class MutoApi {
     }
 
     /**
+     * Dynamically loads a mod JAR at runtime into the running JVM.
+     * Injects the JAR into KnotClassLoader, registers mixins, synchronizes Fabric Loader metadata,
+     * unfreezes registries, and executes main/client/server entrypoints.
+     *
+     * @param jarPath path to the mod jar file
+     * @return CompletableFuture with the ReloadResult
+     */
+    public static CompletableFuture<ReloadResult> loadMod(Path jarPath) {
+        return loadMod(jarPath, stage -> {});
+    }
+
+    public static CompletableFuture<ReloadResult> loadMod(Path jarPath, Consumer<String> stageNotifier) {
+        return ReloadEngine.INSTANCE.loadModAsync(jarPath, stageNotifier);
+    }
+
+    /**
+     * Dynamically unloads a mod at runtime.
+     * Dispatches safe teardown, prunes registries, unregisters networking packets, cleans mod options/key mappings,
+     * and synchronizes Fabric Loader.
+     *
+     * @param modId the mod id to unload
+     * @return CompletableFuture with the ReloadResult
+     */
+    public static CompletableFuture<ReloadResult> unloadMod(String modId) {
+        return unloadMod(modId, stage -> {});
+    }
+
+    public static CompletableFuture<ReloadResult> unloadMod(String modId, Consumer<String> stageNotifier) {
+        return ReloadEngine.INSTANCE.unloadModAsync(modId, stageNotifier);
+    }
+
+    /**
      * Triggers a safe boundary reload. If the player is inside a singleplayer world
      * or connected to a multiplayer server, cleanly disconnects to a progress screen,
      * runs the reload pipeline, and automatically rejoins the world/server on completion.
@@ -65,32 +95,12 @@ public final class MutoApi {
         return ReloadEngine.INSTANCE.history();
     }
 
-    public static boolean isFolderWatcherEnabled() {
-        return ModsFolderWatcher.isEnabled();
-    }
-
-    public static void setFolderWatcherEnabled(boolean enabled) {
-        ModsFolderWatcher.setEnabled(enabled);
-    }
-
     public static boolean isAutoReloadResources() {
         return ReloadEngine.INSTANCE.isAutoReloadResources();
     }
 
     public static void setAutoReloadResources(boolean enabled) {
         ReloadEngine.INSTANCE.setAutoReloadResources(enabled);
-    }
-
-    public static boolean startFileWatcher() {
-        return MutoTriggerWatcher.start();
-    }
-
-    public static boolean stopFileWatcher() {
-        return MutoTriggerWatcher.stop();
-    }
-
-    public static boolean isFileWatcherRunning() {
-        return MutoTriggerWatcher.isRunning();
     }
 
     public static Set<String> getReloadableModIds() {
@@ -115,5 +125,38 @@ public final class MutoApi {
         } catch (Throwable t) {
             return Collections.emptySet();
         }
+    }
+
+    public static boolean isDevMode() {
+        return me.fy2ne.muto.dev.MutoDev.isDevMode();
+    }
+
+    public static void setDevMode(boolean active) {
+        me.fy2ne.muto.dev.MutoDev.setDevMode(active);
+    }
+
+    public static List<String> getDevLogs() {
+        return me.fy2ne.muto.dev.MutoDev.getRecentLogs();
+    }
+
+    public static List<String> getScreenHistory() {
+        List<String> list = new java.util.ArrayList<>();
+        for (var st : me.fy2ne.muto.dev.MutoDev.getScreenHistory()) {
+            list.add(st.toString());
+        }
+        return list;
+    }
+
+    public static void clearDevLogs() {
+        me.fy2ne.muto.dev.MutoDev.clearLogs();
+    }
+
+    public static String runReloadSimulation() {
+        Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
+        return me.fy2ne.muto.dev.MutoDevSimulation.runReloadSimulation(modsDir);
+    }
+
+    public static List<String> prunePhantomDisabledMods() {
+        return Collections.emptyList();
     }
 }

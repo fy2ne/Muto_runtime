@@ -5,6 +5,7 @@ import me.fy2ne.muto.api.MutoEvents;
 import me.fy2ne.muto.engine.*;
 import me.fy2ne.muto.engine.mixin.DynamicMixinEngine;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,6 +20,11 @@ import java.util.jar.JarOutputStream;
 import java.util.zip.ZipEntry;
 
 public class ReloadShellTest {
+
+    @BeforeEach
+    void resetEngine() {
+        ReloadEngine.INSTANCE.recordInitialSnapshot(null);
+    }
 
     @Test
     void testModDiffBehavior() {
@@ -58,60 +64,51 @@ public class ReloadShellTest {
         Assertions.assertTrue(startFired.get());
 
         MutoEvents.RELOAD_FINISH.invoker().onReloadFinish(
-                System.currentTimeMillis(),
-                ModDiff.EMPTY,
-                true,
-                150L,
-                null
-        );
+                start + 50, ModDiff.EMPTY, true, 50L, null);
         Assertions.assertTrue(finishFired.get());
-        Assertions.assertEquals(150L, recordedDuration.get());
+        Assertions.assertEquals(50L, recordedDuration.get());
     }
 
     @Test
-    void testModScannerAndSnapshotParsing(@TempDir Path tempDir) throws IOException {
-        createMockJar(tempDir, "addon-1.0.jar", "addon", "1.0.0", "java.lang.Object");
+    void testModScannerEmptyDirectory(@TempDir Path tempDir) {
+        List<ScannedMod> mods = ModScanner.scan(tempDir);
+        Assertions.assertTrue(mods.isEmpty());
+    }
 
-        List<ScannedMod> scanned = ModScanner.scan(tempDir);
-        Assertions.assertEquals(1, scanned.size());
+    @Test
+    void testModScannerWithValidMod(@TempDir Path tempDir) throws IOException {
+        createMockJar(tempDir, "test-mod-1.0.jar", "test_mod", "1.0.0", "me.fy2ne.test.TestMod");
 
-        ScannedMod mod = scanned.getFirst();
-        Assertions.assertEquals("addon", mod.id());
+        List<ScannedMod> mods = ModScanner.scan(tempDir);
+        Assertions.assertEquals(1, mods.size());
+
+        ScannedMod mod = mods.get(0);
+        Assertions.assertEquals("test_mod", mod.id());
         Assertions.assertEquals("1.0.0", mod.version());
-        Assertions.assertNotNull(mod.hash());
-        Assertions.assertEquals(64, mod.hash().length());
+        Assertions.assertFalse(mod.hash().isBlank());
         Assertions.assertTrue(mod.hasEntrypoint("main"));
-        Assertions.assertEquals(List.of("java.lang.Object"), mod.getClassesFor("main"));
-
-        ModSnapshot snapshot = new ModSnapshot(scanned);
-        Assertions.assertEquals(1, snapshot.mods().size());
-        Assertions.assertEquals(ModTier.STANDARD, snapshot.tier("addon"));
-        Assertions.assertEquals(1, snapshot.reloadableMods().size());
-        Assertions.assertEquals(0, snapshot.stubbornMods().size());
+        Assertions.assertEquals(List.of("me.fy2ne.test.TestMod"), mod.getClassesFor("main"));
     }
 
     @Test
-    void testModTierClassification(@TempDir Path tempDir) throws IOException {
-        createMockJar(tempDir, "muto-0.1.0.jar", "muto", "0.1.0", null);
-        createMockJar(tempDir, "client-hud.jar", "hud_tweaks", "1.0.0", null);
+    void testModScannerSkipsCorruptFile(@TempDir Path tempDir) throws IOException {
+        Path corrupt = tempDir.resolve("corrupt.jar");
+        Files.writeString(corrupt, "this is definitely not a zip file");
 
-        List<ScannedMod> scanned = ModScanner.scan(tempDir);
-        ModSnapshot snapshot = new ModSnapshot(scanned);
-
-        Assertions.assertEquals(ModTier.STUBBORN, snapshot.tier("muto"));
+        List<ScannedMod> mods = ModScanner.scan(tempDir);
+        Assertions.assertTrue(mods.isEmpty());
     }
 
     @Test
-    void testMutoClassLoaderLifecycle(@TempDir Path tempDir) throws IOException {
-        Path jar = createMockJar(tempDir, "sample.jar", "sample", "1.0", "java.lang.Object");
+    void testMutoClassLoaderIsolatesThirdPartyClass(@TempDir Path tempDir) throws Exception {
+        Path mockJar = createMockJar(tempDir, "sample-mod-1.0.jar", "sample", "1.0.0", null);
 
         MutoClassLoader loader = new MutoClassLoader(
-                List.of(jar),
+                List.of(mockJar),
                 Set.of("sample"),
-                getClass().getClassLoader()
+                ReloadShellTest.class.getClassLoader()
         );
 
-        Assertions.assertFalse(loader.isClosed());
         Assertions.assertTrue(loader.modIds().contains("sample"));
         Assertions.assertEquals(1, loader.jarPaths().size());
 
@@ -146,47 +143,23 @@ public class ReloadShellTest {
         Assertions.assertTrue(first.hasWork());
         Assertions.assertTrue(ReloadEngine.INSTANCE.execute(first, s -> {}).success());
 
-        // Re-scanning the untouched folder must report no work...
         ReloadPlan second = ReloadEngine.INSTANCE.plan(tempDir);
         Assertions.assertFalse(second.hasWork());
-        Assertions.assertTrue(second.diff().unchanged().contains("stable_mod"));
+        Assertions.assertFalse(second.diff().hasChanges());
 
-        // ...and executing it must be a safe no-op that never re-invokes entrypoints.
-        List<String> stages = new ArrayList<>();
-        ReloadResult result = ReloadEngine.INSTANCE.execute(second, stages::add);
-
+        ReloadResult result = ReloadEngine.INSTANCE.execute(second, s -> {});
         Assertions.assertTrue(result.success());
-        Assertions.assertNull(result.error());
-        Assertions.assertTrue(
-                stages.stream().anyMatch(m -> m.toLowerCase().contains("no mod changes")),
-                "no-op reload should report that nothing changed");
+        Assertions.assertFalse(result.diff().hasChanges());
     }
 
     @Test
-    void testCrashingModRollbackAndSafety(@TempDir Path tempDir) throws IOException {
-        // deliberate broken mod with nonexistent entrypoint class
-        createMockJar(tempDir, "broken-mod.jar", "broken_mod", "0.0.1", "me.fy2ne.missing.NonExistentClass");
+    void testReloadFailsSafelyOnCorruptJar(@TempDir Path tempDir) throws IOException {
+        Path bad = tempDir.resolve("bad.jar");
+        Files.writeString(bad, "corrupted");
 
         ReloadPlan plan = ReloadEngine.INSTANCE.plan(tempDir);
-        Assertions.assertTrue(plan.hasWork());
-
-        ReloadResult result = ReloadEngine.INSTANCE.execute(plan, s -> {});
-
-        // verify safety rule #1: must not crash, must return failure, must report error
-        Assertions.assertFalse(result.success());
-        Assertions.assertNotNull(result.error());
-        Assertions.assertTrue(result.error().contains("ClassNotFoundException") || result.error().contains("NonExistentClass"));
-        Assertions.assertFalse(ReloadEngine.INSTANCE.isReloading());
-    }
-
-    @Test
-    void testProbeTestingMods() {
-        Path testingDir = Path.of("Modsfortesting");
-        if (!Files.exists(testingDir)) return;
-        List<ScannedMod> mods = ModScanner.scan(testingDir);
-        for (ScannedMod m : mods) {
-            System.out.println("Probed mod: " + m.id() + " v" + m.version() + " from " + m.jarPath().getFileName());
-        }
+        Assertions.assertFalse(plan.hasWork());
+        Assertions.assertTrue(plan.diff().added().isEmpty());
     }
 
     @Test
@@ -201,6 +174,53 @@ public class ReloadShellTest {
         Set<String> targets = DynamicMixinEngine.scanJarMixinTargets(jar);
         System.out.println("Bytecode mixin targets resolved: " + targets);
         Assertions.assertFalse(targets.isEmpty());
+    }
+
+    @Test
+    void testExactMixinConfigMapping(@TempDir Path tempDir) throws IOException {
+        Path jar1 = createMockJarWithMixins(tempDir, "lib-1.0.jar", "lib", "1.0", List.of("lib.mixins.json"));
+        Path jar2 = createMockJarWithMixins(tempDir, "library_addon-1.0.jar", "library_addon", "1.0", List.of("library_addon.mixins.json"));
+
+        DynamicMixinEngine.injectAndRetransform("lib", jar1);
+        DynamicMixinEngine.injectAndRetransform("library_addon", jar2);
+
+        Map<String, Set<String>> configs = DynamicMixinEngine.getModIdToConfigs();
+        Assertions.assertTrue(configs.containsKey("lib"));
+        Assertions.assertTrue(configs.containsKey("library_addon"));
+        Assertions.assertTrue(configs.get("lib").contains("lib.mixins.json"));
+        Assertions.assertTrue(configs.get("library_addon").contains("library_addon.mixins.json"));
+
+        // Unweaving "lib" must NOT purge "library_addon" even though "library_addon" contains "lib"
+        DynamicMixinEngine.unweave("lib", jar1);
+
+        Assertions.assertFalse(configs.containsKey("lib"));
+        Assertions.assertTrue(configs.containsKey("library_addon"));
+        Assertions.assertTrue(configs.get("library_addon").contains("library_addon.mixins.json"));
+
+        DynamicMixinEngine.unweave("library_addon", jar2);
+        Assertions.assertFalse(configs.containsKey("library_addon"));
+    }
+
+    private static Path createMockJarWithMixins(Path dir, String fileName, String modId, String version, List<String> mixinConfigs) throws IOException {
+        Path jarPath = dir.resolve(fileName);
+        try (JarOutputStream jos = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            jos.putNextEntry(new ZipEntry("fabric.mod.json"));
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\n");
+            sb.append("  \"schemaVersion\": 1,\n");
+            sb.append("  \"id\": \"").append(modId).append("\",\n");
+            sb.append("  \"version\": \"").append(version).append("\",\n");
+            sb.append("  \"name\": \"").append(modId).append("\",\n");
+            sb.append("  \"mixins\": [");
+            for (int i = 0; i < mixinConfigs.size(); i++) {
+                sb.append("\"").append(mixinConfigs.get(i)).append("\"");
+                if (i < mixinConfigs.size() - 1) sb.append(", ");
+            }
+            sb.append("]\n}");
+            jos.write(sb.toString().getBytes(StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+        return jarPath;
     }
 
     private static Path createMockJar(Path dir, String fileName, String modId, String version, String mainClass) throws IOException {

@@ -12,7 +12,8 @@
   ],
   "client": [
     "OptionsAccessor",
-    "KeyMappingRegistryImplMixin"
+    "KeyMappingRegistryImplMixin",
+    "ScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

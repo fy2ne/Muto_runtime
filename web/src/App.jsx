@@ -31,7 +31,7 @@ import {
 
 const RUNTIME_REPO = "https://github.com/fy2ne/Muto-Runtime";
 const MENU_REPO = "https://github.com/fy2ne/Muto-Menu";
-const VERSION = "0.3.0-beta";
+const VERSION = "0.1.0-beta";
 
 function CodeSnippet({ filename, code }) {
   const [copied, setCopied] = useState(false);
@@ -423,10 +423,13 @@ function ArticleContent({ id }) {
           <h2 id="subsystems">Core subsystems</h2>
           <ul>
             <li>
-              <strong>Loader bridge</strong>: <code>me.fy2ne.muto.engine.knot.KnotInjector</code> appends new or updated jars (plus nested Jar-in-Jar archives) to Fabric Loader's live <code>Knot</code> classloader. <code>me.fy2ne.muto.engine.mixin.DynamicMixinEngine</code> registers newly discovered mixin configs with the SpongePowered Mixin service.
+              <strong>JVMTI Instrumentation &amp; Bytecode Weaving</strong>: <code>MutoAgentBootstrap</code> attaches an Instrumentation agent (<code>Can-Retransform-Classes</code>) at boot, while <code>DynamicMixinEngine</code> weaves and unweaves mixin bytecode across already-loaded classes via <code>Instrumentation.retransformClasses()</code>.
             </li>
             <li>
-              <strong>Reload engine</strong>: <code>me.fy2ne.muto.engine.ReloadEngine</code> runs directory scanning, SHA-256 diffing, registry thawing, transaction rollbacks, initializer execution, and resource remounting behind <code>me.fy2ne.muto.api.MutoApi</code>.
+              <strong>Loader bridge &amp; Handle Release</strong>: <code>KnotInjector</code> appends new/updated jars to Fabric Loader's live <code>Knot</code> classloader, and <code>JarUnlocker</code> closes internal <code>URLClassPath</code>, <code>ZipFileSystem</code>, and <code>JarFileFactory</code> handles on unload.
+            </li>
+            <li>
+              <strong>Reload engine</strong>: <code>ReloadEngine</code> orchestrates SHA-256 diffing, isolated per-entrypoint lifecycles, registry thawing, transactional rollbacks, and guarded resource remounting behind <code>MutoApi</code>.
             </li>
           </ul>
 
@@ -914,9 +917,9 @@ MutoEvents.RELOAD_FINISH.register((endMs, diff, ok, ms, err) -> {
             <code>me.fy2ne.muto.engine.knot.KnotInjector</code> uses reflection to append a new or updated jar (and its nested Jar-in-Jar dependencies) directly to Knot's URL classpath so new classes resolve through the active loader.
           </p>
 
-          <h2 id="transformer">Dynamic mixin registration</h2>
+          <h2 id="transformer">Dynamic mixin retransformation</h2>
           <p>
-            <code>me.fy2ne.muto.engine.mixin.DynamicMixinEngine</code> registers a new jar's mixin configs with the global Mixin service via <code>Mixins.addConfiguration</code>.
+            <code>me.fy2ne.muto.engine.mixin.DynamicMixinEngine</code> registers mixin configurations at runtime and pairs with <code>MutoClassFileTransformer</code> + <code>Instrumentation.retransformClasses()</code> to weave and unweave bytecode directly in already-loaded target classes without restarting the JVM.
           </p>
         </>
       );
@@ -990,7 +993,7 @@ MutoEvents.RELOAD_FINISH.register((endMs, diff, ok, ms, err) -> {
 
           <h2 id="installation">Installation</h2>
           <p>
-            Place <code>muto-menu-0.3.0-beta+26.x.jar</code> into your <code>mods/</code> directory alongside <code>muto-0.3.0-beta+26.x.jar</code> and Fabric API.
+            Place <code>muto-menu-0.1.0-beta+26.x.jar</code> into your <code>mods/</code> directory alongside <code>muto-0.1.0-beta+26.x.jar</code> and Fabric API.
           </p>
 
           <h2 id="controls">In-game access</h2>

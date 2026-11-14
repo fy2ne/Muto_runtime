@@ -3,7 +3,6 @@ package me.fy2ne.muto.engine;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import me.fy2ne.muto.MutoLog;
-import me.fy2ne.muto.mods.DisabledModsRegistry;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.InputStream;
@@ -59,10 +58,7 @@ public final class ModDependencyAnalyzer {
         try {
             if (FabricLoader.getInstance() != null) {
                 for (var container : FabricLoader.getInstance().getAllMods()) {
-                    String activeId = container.getMetadata().getId();
-                    if (!DisabledModsRegistry.isDisabled(activeId)) {
-                        available.add(activeId);
-                    }
+                    available.add(container.getMetadata().getId());
                 }
             }
         } catch (Throwable ignored) {}

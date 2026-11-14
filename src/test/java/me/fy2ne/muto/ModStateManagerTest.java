@@ -88,6 +88,21 @@ public class ModStateManagerTest {
         Assertions.assertFalse(Files.exists(disabledJar));
     }
 
+    @Test
+    void testLauncherExtensions() {
+        Assertions.assertTrue(ModStateManager.isDisabledFileName("mod.jar.disabled"));
+        Assertions.assertTrue(ModStateManager.isDisabledFileName("mod.jar.disactivation"));
+        Assertions.assertTrue(ModStateManager.isDisabledFileName("mod.jar.discavation"));
+        Assertions.assertTrue(ModStateManager.isDisabledFileName("mod.jar.deactivation"));
+        Assertions.assertTrue(ModStateManager.isDisabledFileName("mod.disabled"));
+        Assertions.assertFalse(ModStateManager.isDisabledFileName("mod.jar"));
+
+        Assertions.assertEquals("mod.jar", ModStateManager.toEnabledJarName("mod.jar.disabled"));
+        Assertions.assertEquals("mod.jar", ModStateManager.toEnabledJarName("mod.jar.disactivation"));
+        Assertions.assertEquals("mod.jar", ModStateManager.toEnabledJarName("mod.jar.discavation"));
+        Assertions.assertEquals("mod.jar.disabled", ModStateManager.toDisabledJarName("mod.jar"));
+    }
+
     private void createDummyModJar(Path path, String id, String name, String version) throws IOException {
         try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(path.toFile()))) {
             jos.putNextEntry(new JarEntry("fabric.mod.json"));

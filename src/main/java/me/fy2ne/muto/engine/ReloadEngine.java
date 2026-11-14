@@ -6,6 +6,7 @@ import com.google.gson.reflect.TypeToken;
 import me.fy2ne.muto.MutoLog;
 import me.fy2ne.muto.api.ModDiff;
 import me.fy2ne.muto.api.MutoEvents;
+import me.fy2ne.muto.engine.di.DiContainerGuard;
 import me.fy2ne.muto.engine.knot.KnotInjector;
 import me.fy2ne.muto.engine.mixin.DynamicMixinEngine;
 import me.fy2ne.muto.engine.resource.ResourceHotMount;
@@ -16,7 +17,9 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.io.Closeable;
 import java.io.Reader;
 import java.io.Writer;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,6 +40,7 @@ public final class ReloadEngine {
     private final AtomicBoolean reloading = new AtomicBoolean(false);
     private volatile ModSnapshot currentSnapshot = ModSnapshot.empty();
     private volatile boolean autoReloadResources = true;
+    private volatile Path lastModsDir;
     private final Map<String, List<Object>> instancesByMod = new LinkedHashMap<>();
 
     private static final List<ReloadHistoryEntry> HISTORY = new CopyOnWriteArrayList<>();
@@ -61,9 +65,14 @@ public final class ReloadEngine {
     }
 
     public void recordInitialSnapshot(Path modsDir) {
+        this.lastModsDir = modsDir;
         ensureHistoryLoaded();
-        List<ScannedMod> scanned = ModScanner.scan(modsDir);
+        List<ScannedMod> scanned = (modsDir != null && java.nio.file.Files.isDirectory(modsDir))
+                ? ModScanner.scan(modsDir, false)
+                : Collections.emptyList();
         currentSnapshot = new ModSnapshot(scanned);
+        DynamicMixinEngine.recordBaseline(scanned);
+        me.fy2ne.muto.dev.MutoDev.log("SNAPSHOT", String.format("baseline snapshot recorded: %d mods", currentSnapshot.mods().size()));
         MutoLog.info("baseline snapshot: {} mods ({} reloadable, {} stubborn)",
                 currentSnapshot.mods().size(),
                 currentSnapshot.reloadableMods().size(),
@@ -75,7 +84,8 @@ public final class ReloadEngine {
     }
 
     public ReloadPlan plan(Path modsDir) {
-        List<ScannedMod> scanned = ModScanner.scan(modsDir);
+        this.lastModsDir = modsDir;
+        List<ScannedMod> scanned = ModScanner.scan(modsDir, true);
         ModSnapshot target = new ModSnapshot(scanned);
         ModDiff diff = currentSnapshot.diffAgainst(target);
         return new ReloadPlan(
@@ -89,6 +99,50 @@ public final class ReloadEngine {
 
     public CompletableFuture<ReloadResult> reloadAsync(Path modsDir, Consumer<String> stageNotifier) {
         return CompletableFuture.supplyAsync(() -> execute(plan(modsDir), stageNotifier));
+    }
+
+    public CompletableFuture<ReloadResult> loadModAsync(Path jarPath, Consumer<String> stageNotifier) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (jarPath == null || !Files.exists(jarPath)) {
+                return ReloadResult.fail(new ModDiff(Set.of(), Set.of(), Set.of(), Set.of()), 0L, "jar does not exist: " + jarPath);
+            }
+            ScannedMod probed = ModScanner.probe(jarPath);
+            if (probed == null) {
+                return ReloadResult.fail(new ModDiff(Set.of(), Set.of(), Set.of(), Set.of()), 0L, "invalid mod jar (no fabric.mod.json): " + jarPath.getFileName());
+            }
+
+            Map<String, ScannedMod> map = new LinkedHashMap<>(currentSnapshot.mods());
+            map.put(probed.id(), probed);
+            ModSnapshot target = new ModSnapshot(new ArrayList<>(map.values()));
+            ModDiff diff = currentSnapshot.diffAgainst(target);
+            ReloadPlan plan = new ReloadPlan(currentSnapshot, target, diff, List.of(probed), Collections.emptyList());
+            return execute(plan, stageNotifier);
+        });
+    }
+
+    public CompletableFuture<ReloadResult> unloadModAsync(String modId, Consumer<String> stageNotifier) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (modId == null || modId.isBlank()) {
+                return ReloadResult.fail(new ModDiff(Set.of(), Set.of(), Set.of(), Set.of()), 0L, "empty mod id");
+            }
+            if (!currentSnapshot.mods().containsKey(modId)) {
+                // If not in currentSnapshot, try to locate in FabricLoader
+                boolean inLoader = false;
+                try {
+                    inLoader = FabricLoader.getInstance() != null && FabricLoader.getInstance().getModContainer(modId).isPresent();
+                } catch (Throwable ignored) {}
+                if (!inLoader) {
+                    return ReloadResult.fail(new ModDiff(Set.of(), Set.of(), Set.of(), Set.of()), 0L, "mod is not loaded: " + modId);
+                }
+            }
+
+            Map<String, ScannedMod> map = new LinkedHashMap<>(currentSnapshot.mods());
+            map.remove(modId);
+            ModSnapshot target = new ModSnapshot(new ArrayList<>(map.values()));
+            ModDiff diff = currentSnapshot.diffAgainst(target);
+            ReloadPlan plan = new ReloadPlan(currentSnapshot, target, diff, Collections.emptyList(), Collections.emptyList());
+            return execute(plan, stageNotifier);
+        });
     }
 
     public List<ReloadHistoryEntry> history() {
@@ -147,6 +201,8 @@ public final class ReloadEngine {
         }
 
         long startMs = System.currentTimeMillis();
+        me.fy2ne.muto.dev.MutoDev.notifyReloadStart();
+        me.fy2ne.muto.dev.MutoDev.log("RELOAD", "execute started. Diff: " + plan.diff());
         MutoEvents.RELOAD_START.invoker().onReloadStart(startMs, plan.diff());
         List<String> stepLogs = new ArrayList<>();
 
@@ -154,6 +210,7 @@ public final class ReloadEngine {
             ModDiff diff = plan.diff();
 
             if (!plan.hasWork()) {
+                me.fy2ne.muto.dev.MutoDev.diagnoseNoOp(plan.currentSnapshot(), plan.targetSnapshot(), lastModsDir);
                 notify(stageNotifier, stepLogs, "Scanning /mods: all mod files are up to date.");
                 notify(stageNotifier, stepLogs, "No mod changes detected — reload is a no-op.");
                 long noopMs = System.currentTimeMillis() - startMs;
@@ -202,6 +259,29 @@ public final class ReloadEngine {
             var registryBackup = RegistryFreezer.snapshotNamespaces(affectedNamespaces);
 
             try {
+                // ── PHASE A: TEARDOWN (removed + updated mods) ──
+                if (!diff.removed().isEmpty()) {
+                    notify(stageNotifier, stepLogs, "Tearing down removed mods...");
+                    for (String rem : diff.removed()) {
+                        teardownMod(rem);
+                        RegistryFreezer.pruneNamespace(rem);
+                        notify(stageNotifier, stepLogs, "torn down: " + rem);
+                    }
+                }
+                for (String upd : diff.updated()) {
+                    teardownMod(upd);
+                    RegistryFreezer.pruneNamespace(upd);
+                    notify(stageNotifier, stepLogs, "torn down for update: " + upd);
+                }
+
+                // ── PHASE B: FABRIC LOADER SYNC ──
+                notify(stageNotifier, stepLogs, "Synchronizing Fabric Loader mod metadata...");
+                syncFabricLoader(plan.targetSnapshot(), diff);
+                if (!diff.removed().isEmpty()) {
+                    me.fy2ne.muto.mods.ModStateManager.INSTANCE.retryPendingDisables();
+                }
+
+                // ── PHASE C: FORWARD INJECTION (added + updated mods) ──
                 List<Path> allInjectedPaths = new ArrayList<>();
                 if (!initializable.isEmpty()) {
                     notify(stageNotifier, stepLogs, "Injecting mod jars into KnotClassLoader...");
@@ -217,27 +297,13 @@ public final class ReloadEngine {
                 }
 
                 if (!allInjectedPaths.isEmpty()) {
-                    notify(stageNotifier, stepLogs, "Registering dynamic mixin configurations...");
+                    notify(stageNotifier, stepLogs, "Weaving dynamic mixins...");
                     for (Path p : allInjectedPaths) {
-                        int registered = DynamicMixinEngine.registerDynamicMixins(p);
-                        if (registered > 0) {
-                            notify(stageNotifier, stepLogs, String.format("Registered %d mixin config(s) for %s", registered, p.getFileName()));
+                        int retransformed = DynamicMixinEngine.injectAndRetransform(p);
+                        if (retransformed > 0) {
+                            notify(stageNotifier, stepLogs, String.format("Retransformed %d classes for %s", retransformed, p.getFileName()));
                         }
                     }
-                }
-
-                if (!diff.removed().isEmpty()) {
-                    notify(stageNotifier, stepLogs, "Tearing down removed mod contexts...");
-                    for (String rem : diff.removed()) {
-                        teardownMod(rem);
-                        RegistryFreezer.pruneNamespace(rem);
-                        notify(stageNotifier, stepLogs, String.format("Unloaded mod context: %s", rem));
-                    }
-                }
-                for (String upd : diff.updated()) {
-                    teardownMod(upd);
-                    RegistryFreezer.pruneNamespace(upd);
-                    notify(stageNotifier, stepLogs, String.format("Refreshed mod context: %s", upd));
                 }
 
                 notify(stageNotifier, stepLogs, "Unfreezing registries & invoking entrypoints in Knot...");
@@ -253,15 +319,12 @@ public final class ReloadEngine {
 
                 syncKeyMappings();
 
-                notify(stageNotifier, stepLogs, "Synchronizing Fabric Loader mod metadata...");
-                syncFabricLoader(plan.targetSnapshot(), diff);
-
                 if (autoReloadResources && (!initializable.isEmpty() || !diff.removed().isEmpty())) {
                     notify(stageNotifier, stepLogs, "Mounting resources & reloading OpenGL shaders...");
                     try {
-                        ResourceHotMount.remountAndReload().get(15, java.util.concurrent.TimeUnit.SECONDS);
+                        ResourceHotMount.remountAndReload().get(120, java.util.concurrent.TimeUnit.SECONDS);
                     } catch (Throwable t) {
-                        MutoLog.warn("resource hot mount wait skipped: {}", t.getMessage());
+                        MutoLog.warn("resource hot mount wait warning: {}", t.getMessage());
                     }
                 }
 
@@ -286,6 +349,7 @@ public final class ReloadEngine {
             } catch (Throwable err) {
                 long durationMs = System.currentTimeMillis() - startMs;
                 String failMsg = "Reload failed (rolled back): " + err.getMessage();
+                me.fy2ne.muto.dev.MutoDev.log("RELOAD-FAIL", failMsg);
                 notify(stageNotifier, stepLogs, failMsg);
                 MutoLog.error("reload failed, executing transaction rollback: {}", err.getMessage(), err);
 
@@ -296,6 +360,9 @@ public final class ReloadEngine {
                 instancesByMod.putAll(backupInstances);
                 RegistryFreezer.restoreSnapshot(affectedNamespaces, registryBackup);
                 RegistryFreezer.freezeAll();
+                try {
+                    syncFabricLoader(plan.currentSnapshot(), new ModDiff(diff.removed(), diff.added(), diff.updated(), diff.unchanged()));
+                } catch (Throwable ignored) {}
 
                 MutoEvents.RELOAD_FINISH.invoker().onReloadFinish(
                         System.currentTimeMillis(),
@@ -331,10 +398,272 @@ public final class ReloadEngine {
                 closeQuietly(inst);
             }
         }
+        DynamicMixinEngine.unweave(modId, null);
+        purgeKeyMappings(modId);
+        purgeModOptions(modId);
         teardownNetworking(modId);
+        DiContainerGuard.teardown(modId);
+    }
+
+    private void purgeKeyMappings(String modId) {
+        if (modId == null) return;
+        try {
+            net.minecraft.client.Minecraft mc = null;
+            try { mc = net.minecraft.client.Minecraft.getInstance(); } catch (Throwable ignored) {}
+            if (mc == null) return;
+
+            final String lowerId = modId.toLowerCase(Locale.ROOT);
+            final net.minecraft.client.Minecraft client = mc;
+            Runnable purge = () -> {
+                try {
+                    try {
+                        Class<?> regClass = Class.forName("net.fabricmc.fabric.impl.client.keymapping.KeyMappingRegistryImpl");
+                        Field f = regClass.getDeclaredField("MODDED_KEY_BINDINGS");
+                        f.setAccessible(true);
+                        List<?> list = (List<?>) f.get(null);
+                        if (list != null) {
+                            synchronized (list) {
+                                list.removeIf(item -> isModKeyMapping(item, lowerId));
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+
+                    try {
+                        Field allField = net.minecraft.client.KeyMapping.class.getDeclaredField("ALL");
+                        allField.setAccessible(true);
+                        Map<?, ?> allMap = (Map<?, ?>) allField.get(null);
+                        if (allMap != null) {
+                            allMap.entrySet().removeIf(e -> {
+                                String k = String.valueOf(e.getKey()).toLowerCase(Locale.ROOT);
+                                if (k.contains("." + lowerId + ".") || k.startsWith(lowerId + ".") || k.contains(lowerId)) {
+                                    return true;
+                                }
+                                return isModKeyMapping(e.getValue(), lowerId);
+                            });
+                        }
+
+                        Field mapField = net.minecraft.client.KeyMapping.class.getDeclaredField("MAP");
+                        mapField.setAccessible(true);
+                        Map<?, ?> keyMap = (Map<?, ?>) mapField.get(null);
+                        if (keyMap != null) {
+                            for (Object listObj : keyMap.values()) {
+                                if (listObj instanceof List<?> kmList) {
+                                    kmList.removeIf(km -> isModKeyMapping(km, lowerId));
+                                }
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+
+                    if (client.options != null && client.options.keyMappings != null) {
+                        List<net.minecraft.client.KeyMapping> retained = new ArrayList<>();
+                        for (net.minecraft.client.KeyMapping km : client.options.keyMappings) {
+                            if (!isModKeyMapping(km, lowerId)) {
+                                retained.add(km);
+                            }
+                        }
+                        net.minecraft.client.KeyMapping[] arr = retained.toArray(new net.minecraft.client.KeyMapping[0]);
+                        try {
+                            ((me.fy2ne.muto.mixin.OptionsAccessor) client.options).muto$setKeyMappings(arr);
+                        } catch (Throwable fallback) {
+                            try {
+                                Field uField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                                uField.setAccessible(true);
+                                sun.misc.Unsafe unsafe = (sun.misc.Unsafe) uField.get(null);
+                                Field kmField = net.minecraft.client.Options.class.getDeclaredField("keyMappings");
+                                long offset = unsafe.objectFieldOffset(kmField);
+                                unsafe.putObject(client.options, offset, arr);
+                            } catch (Throwable ignored) {}
+                        }
+                    }
+
+                    net.minecraft.client.KeyMapping.resetMapping();
+                    MutoLog.info("purged keymappings for mod: {}", lowerId);
+                } catch (Throwable t) {
+                    MutoLog.warn("error purging keymappings for {}: {}", lowerId, t.getMessage());
+                }
+            };
+
+            if (!client.isSameThread()) {
+                client.submit(purge).get();
+            } else {
+                purge.run();
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static boolean isModKeyMapping(Object obj, String modId) {
+        if (!(obj instanceof net.minecraft.client.KeyMapping km)) return false;
+        String name = km.getName() != null ? km.getName().toLowerCase(Locale.ROOT) : "";
+        if (name.contains("." + modId + ".") || name.startsWith(modId + ".") || name.contains(modId) || name.endsWith("." + modId)) return true;
+        try {
+            if (km.getCategory() != null) {
+                String cat = String.valueOf(km.getCategory()).toLowerCase(Locale.ROOT);
+                if (cat.contains(modId)) return true;
+            }
+        } catch (Throwable ignored) {}
+        String clsName = km.getClass().getName().toLowerCase(Locale.ROOT);
+        return clsName.contains("." + modId + ".") || clsName.contains(modId);
+    }
+
+    private void purgeModOptions(String modId) {
+        if (modId == null) return;
+        final String lowerId = modId.toLowerCase(Locale.ROOT);
+
+        try {
+            Class<?> mmClass = Class.forName("com.terraformersmc.modmenu.ModMenu");
+            Field factField = null;
+            try {
+                factField = mmClass.getDeclaredField("configScreenFactories");
+                factField.setAccessible(true);
+            } catch (NoSuchFieldException ignored) {}
+            if (factField != null) {
+                Map<?, ?> factories = (Map<?, ?>) factField.get(null);
+                if (factories != null) {
+                    factories.remove(lowerId);
+                    factories.remove(modId);
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            Class<?> cmClass = Class.forName("net.caffeinemc.mods.sodium.client.config.ConfigManager");
+            Field cuField = null;
+            try {
+                cuField = cmClass.getDeclaredField("configUsers");
+                cuField.setAccessible(true);
+            } catch (NoSuchFieldException ignored) {}
+            if (cuField != null) {
+                Object cu = cuField.get(null);
+                if (cu instanceof Collection<?> col) {
+                    col.removeIf(item -> item != null && item.toString().toLowerCase(Locale.ROOT).contains(lowerId));
+                }
+            }
+
+            Field cfgField = cmClass.getDeclaredField("CONFIG");
+            cfgField.setAccessible(true);
+            Object cfg = cfgField.get(null);
+            if (cfg != null) {
+                Field moField = cfg.getClass().getDeclaredField("modOptions");
+                moField.setAccessible(true);
+                List<?> current = (List<?>) moField.get(cfg);
+                if (current != null) {
+                    List<Object> filtered = new ArrayList<>();
+                    for (Object mo : current) {
+                        boolean match = false;
+                        try {
+                            Method cidM = mo.getClass().getMethod("configId");
+                            String cid = (String) cidM.invoke(mo);
+                            if (cid != null && (cid.equalsIgnoreCase(modId) || cid.equalsIgnoreCase(lowerId))) {
+                                match = true;
+                            }
+                        } catch (Throwable ignored) {}
+                        if (!match) {
+                            filtered.add(mo);
+                        }
+                    }
+                    if (filtered.size() != current.size()) {
+                        Field uField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+                        uField.setAccessible(true);
+                        sun.misc.Unsafe unsafe = (sun.misc.Unsafe) uField.get(null);
+                        long offset = unsafe.objectFieldOffset(moField);
+                        unsafe.putObject(cfg, offset, Collections.unmodifiableList(filtered));
+                        MutoLog.info("purged {} from sodium modOptions ({} -> {})", modId, current.size(), filtered.size());
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            MutoLog.warn("sodium mod options purge skipped for {}: {}", modId, t.getMessage());
+        }
     }
 
     private void teardownNetworking(String modId) {
+        if (modId == null) return;
+        // purge C2S and S2C payload type registrations
+        try {
+            Class<?> ptrClass = Class.forName("net.fabricmc.fabric.impl.networking.PayloadTypeRegistryImpl");
+            for (var f : ptrClass.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                    f.setAccessible(true);
+                    Object registry = f.get(null);
+                    if (registry != null) {
+                        purgePayloadRegistry(registry, modId);
+                    }
+                }
+            }
+        } catch (ClassNotFoundException ignored) {
+            // Fabric networking API not present
+        } catch (Throwable t) {
+            MutoLog.warn("payload registry purge skipped for {}: {}", modId, t.getMessage());
+        }
+
+        // purge global receiver handlers
+        try {
+            Class<?> grrClass = Class.forName("net.fabricmc.fabric.impl.networking.GlobalReceiverRegistry");
+            for (var field : grrClass.getDeclaredFields()) {
+                if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+                if (!java.util.Map.class.isAssignableFrom(field.getType())) continue;
+                field.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                var map = (java.util.Map<?, ?>) field.get(null);
+                if (map == null) continue;
+                int before = map.size();
+                map.entrySet().removeIf(e -> matchesModNamespace(e.getKey(), modId));
+                int pruned = before - map.size();
+                if (pruned > 0) {
+                    MutoLog.info("pruned {} global receivers from {} for {}", pruned, field.getName(), modId);
+                }
+            }
+        } catch (ClassNotFoundException ignored) {
+        } catch (Throwable t) {
+            MutoLog.warn("global receiver purge skipped for {}: {}", modId, t.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void purgePayloadRegistry(Object registry, String modId) {
+        try {
+            for (var field : registry.getClass().getDeclaredFields()) {
+                if (!java.util.Map.class.isAssignableFrom(field.getType())) continue;
+                field.setAccessible(true);
+                var map = (java.util.Map<?, ?>) field.get(registry);
+                if (map == null) continue;
+                int before = map.size();
+                map.entrySet().removeIf(entry ->
+                        matchesModNamespace(entry.getKey(), modId) || matchesModNamespace(entry.getValue(), modId));
+                int pruned = before - map.size();
+                if (pruned > 0) {
+                    MutoLog.info("pruned {} payload mappings from {} for {}", pruned, field.getName(), modId);
+                }
+            }
+        } catch (Throwable t) {
+            MutoLog.warn("payload field scan exception for {}: {}", modId, t.getMessage());
+        }
+    }
+
+    private boolean matchesModNamespace(Object obj, String modId) {
+        if (obj == null) return false;
+        // Try getNamespace() directly — works for ResourceLocation, Identifier, etc.
+        try {
+            var ns = (String) obj.getClass().getMethod("getNamespace").invoke(obj);
+            return modId.equalsIgnoreCase(ns);
+        } catch (Throwable ignored) {}
+        // CustomPacketPayload.Type or wrapper: call id() then getNamespace()
+        try {
+            var res = obj.getClass().getMethod("id").invoke(obj);
+            if (res != null) {
+                var ns = (String) res.getClass().getMethod("getNamespace").invoke(res);
+                return modId.equalsIgnoreCase(ns);
+            }
+        } catch (Throwable ignored) {}
+        // getId() then getNamespace()
+        try {
+            var res = obj.getClass().getMethod("getId").invoke(obj);
+            if (res != null) {
+                var ns = (String) res.getClass().getMethod("getNamespace").invoke(res);
+                return modId.equalsIgnoreCase(ns);
+            }
+        } catch (Throwable ignored) {}
+        return false;
     }
 
     private void closeQuietly(Object inst) {
@@ -350,11 +679,26 @@ public final class ReloadEngine {
     }
 
     private void initializeMod(ScannedMod mod) throws Exception {
+        DiContainerGuard.prepare(mod.id());
         List<Object> created = new ArrayList<>();
         ClassLoader knotCl = Thread.currentThread().getContextClassLoader();
 
-        try {
-            for (String clsName : mod.getClassesFor("main")) {
+        for (String clsName : mod.getClassesFor("preLaunch")) {
+            try {
+                Class<?> cls = Class.forName(clsName, true, knotCl);
+                Object obj = cls.getDeclaredConstructor().newInstance();
+                created.add(obj);
+                if (obj instanceof net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint pre) {
+                    pre.onPreLaunch();
+                    MutoLog.info("initialized preLaunch in knot: {}", clsName);
+                }
+            } catch (Throwable epErr) {
+                MutoLog.warn("preLaunch entrypoint notice in {} ({}): {}", mod.id(), clsName, epErr.getMessage());
+            }
+        }
+
+        for (String clsName : mod.getClassesFor("main")) {
+            try {
                 Class<?> cls = Class.forName(clsName, true, knotCl);
                 Object obj = cls.getDeclaredConstructor().newInstance();
                 created.add(obj);
@@ -363,9 +707,13 @@ public final class ReloadEngine {
                     init.onInitialize();
                     MutoLog.info("initialized main in knot: {}", clsName);
                 }
+            } catch (Throwable epErr) {
+                MutoLog.warn("main entrypoint notice in {} ({}): {}", mod.id(), clsName, epErr.getMessage());
             }
+        }
 
-            for (String clsName : mod.getClassesFor("client")) {
+        for (String clsName : mod.getClassesFor("client")) {
+            try {
                 Class<?> cls = Class.forName(clsName, true, knotCl);
                 Object obj = cls.getDeclaredConstructor().newInstance();
                 created.add(obj);
@@ -382,21 +730,87 @@ public final class ReloadEngine {
                     }
                     MutoLog.info("initialized client in knot: {}", clsName);
                 }
+            } catch (Throwable epErr) {
+                MutoLog.warn("client entrypoint notice in {} ({}): {}", mod.id(), clsName, epErr.getMessage());
             }
-        } catch (Throwable ex) {
-            for (Object inst : created) {
-                closeQuietly(inst);
+        }
+
+        for (String clsName : mod.getClassesFor("server")) {
+            try {
+                Class<?> cls = Class.forName(clsName, true, knotCl);
+                Object obj = cls.getDeclaredConstructor().newInstance();
+                created.add(obj);
+
+                if (obj instanceof net.fabricmc.api.DedicatedServerModInitializer serverInit) {
+                    serverInit.onInitializeServer();
+                    MutoLog.info("initialized server in knot: {}", clsName);
+                }
+            } catch (Throwable epErr) {
+                MutoLog.warn("server entrypoint notice in {} ({}): {}", mod.id(), clsName, epErr.getMessage());
             }
-            String msg = ex.getMessage() != null ? ex.getMessage() : "";
-            Throwable cause = ex.getCause();
-            String causeMsg = cause != null && cause.getMessage() != null ? cause.getMessage() : "";
-            if (msg.contains("already been bound") || causeMsg.contains("already been bound")
-                    || msg.contains("Already initialized") || causeMsg.contains("Already initialized")) {
-                MutoLog.warn("ignoring duplicate binding in {}: {}", mod.id(), msg);
-            } else {
-                MutoLog.error("entrypoint failure in {}: {}", mod.id(), ex.getMessage(), ex);
-                if (ex instanceof Exception e) throw e;
-                throw new RuntimeException(ex);
+        }
+
+        List<String> sodiumConfigs = mod.getClassesFor("sodium:config_api_user");
+        if (!sodiumConfigs.isEmpty()) {
+            try {
+                Class<?> cmCls = Class.forName("net.caffeinemc.mods.sodium.client.config.ConfigManager", true, knotCl);
+                java.lang.reflect.Method regMethod = cmCls.getMethod("registerConfigEntryPoint", String.class, String.class);
+                java.lang.reflect.Method lateMethod = cmCls.getMethod("registerConfigsLate");
+                for (String cfgCls : sodiumConfigs) {
+                    regMethod.invoke(null, cfgCls, mod.id());
+                    MutoLog.info("re-registered sodium:config_api_user for {}: {}", mod.id(), cfgCls);
+                }
+                lateMethod.invoke(null);
+                MutoLog.info("invoked sodium registerConfigsLate for {}", mod.id());
+            } catch (Throwable t) {
+                MutoLog.warn("failed re-registering sodium config user for {}: {}", mod.id(), t.getMessage());
+            }
+        }
+
+        List<String> modmenuEps = mod.getClassesFor("modmenu");
+        if (!modmenuEps.isEmpty()) {
+            try {
+                Class<?> mmCls = Class.forName("com.terraformersmc.modmenu.ModMenu", true, knotCl);
+                java.lang.reflect.Field factField = mmCls.getDeclaredField("configScreenFactories");
+                factField.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> factories = (Map<String, Object>) factField.get(null);
+
+                Class<?> apiCls = Class.forName("com.terraformersmc.modmenu.api.ModMenuApi", true, knotCl);
+                java.lang.reflect.Method getFactory = apiCls.getMethod("getModConfigScreenFactory");
+                java.lang.reflect.Method getProvided = null;
+                try {
+                    getProvided = apiCls.getMethod("getProvidedConfigScreenFactories");
+                } catch (Throwable ignored) {}
+
+                for (String epCls : modmenuEps) {
+                    try {
+                        Class<?> cls = Class.forName(epCls, true, knotCl);
+                        if (apiCls.isAssignableFrom(cls)) {
+                            Object apiInst = cls.getDeclaredConstructor().newInstance();
+                            created.add(apiInst);
+                            Object fact = getFactory.invoke(apiInst);
+                            if (fact != null && factories != null) {
+                                factories.put(mod.id(), fact);
+                                MutoLog.info("registered modmenu configScreenFactory for {}: {}", mod.id(), epCls);
+                            }
+                            if (getProvided != null && factories != null) {
+                                Map<?, ?> prov = (Map<?, ?>) getProvided.invoke(apiInst);
+                                if (prov != null) {
+                                    for (var e : prov.entrySet()) {
+                                        if (e.getKey() != null && e.getValue() != null) {
+                                            factories.put(String.valueOf(e.getKey()), e.getValue());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Throwable epErr) {
+                        MutoLog.warn("modmenu entrypoint notice in {} ({}): {}", mod.id(), epCls, epErr.getMessage());
+                    }
+                }
+            } catch (Throwable t) {
+                MutoLog.warn("failed registering modmenu api entrypoint for {}: {}", mod.id(), t.getMessage());
             }
         }
 
@@ -431,6 +845,46 @@ public final class ReloadEngine {
                     list = (List<Object>) modsListField.get(fl);
                 }
 
+                Field epStorageField = null;
+                Field adapterMapField = null;
+                cur = fl.getClass();
+                while (cur != null && (epStorageField == null || adapterMapField == null)) {
+                    try {
+                        if (epStorageField == null) epStorageField = cur.getDeclaredField("entrypointStorage");
+                    } catch (NoSuchFieldException ignored) {}
+                    try {
+                        if (adapterMapField == null) adapterMapField = cur.getDeclaredField("adapterMap");
+                    } catch (NoSuchFieldException ignored) {}
+                    cur = cur.getSuperclass();
+                }
+
+                Object epStorage = null;
+                Map<?, ?> adapterMap = null;
+                Map<?, ?> entryMap = null;
+                Method addEpMethod = null;
+
+                if (epStorageField != null) {
+                    epStorageField.setAccessible(true);
+                    epStorage = epStorageField.get(fl);
+                    if (epStorage != null) {
+                        try {
+                            Field emField = epStorage.getClass().getDeclaredField("entryMap");
+                            emField.setAccessible(true);
+                            entryMap = (Map<?, ?>) emField.get(epStorage);
+                        } catch (Throwable ignored) {}
+                        for (Method m : epStorage.getClass().getMethods()) {
+                            if (m.getName().equals("add") && m.getParameterCount() == 4) {
+                                addEpMethod = m;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (adapterMapField != null) {
+                    adapterMapField.setAccessible(true);
+                    adapterMap = (Map<?, ?>) adapterMapField.get(fl);
+                }
+
                 if (diff != null) {
                     for (String removedId : diff.removed()) {
                         if (map != null) map.remove(removedId);
@@ -442,6 +896,22 @@ public final class ReloadEngine {
                                 return false;
                             });
                         }
+                        if (entryMap != null) {
+                            for (Object entryListObj : entryMap.values()) {
+                                if (entryListObj instanceof List<?> epList) {
+                                    epList.removeIf(entryItem -> {
+                                        try {
+                                            Method gmc = entryItem.getClass().getMethod("getModContainer");
+                                            Object modc = gmc.invoke(entryItem);
+                                            if (modc instanceof net.fabricmc.loader.api.ModContainer mc) {
+                                                return mc.getMetadata().getId().equals(removedId);
+                                            }
+                                        } catch (Throwable ignored) {}
+                                        return false;
+                                    });
+                                }
+                            }
+                        }
                     }
 
                     for (String addedId : diff.added()) {
@@ -452,6 +922,26 @@ public final class ReloadEngine {
                             if (container != null) {
                                 if (map != null) map.put(mod.id(), container);
                                 if (list != null && !list.contains(container)) list.add(container);
+                                if (epStorage != null && addEpMethod != null && container instanceof net.fabricmc.loader.api.ModContainer) {
+                                    try {
+                                        Method getMetaMethod = container.getClass().getMethod("getMetadata");
+                                        Object meta = getMetaMethod.invoke(container);
+                                        Method getKeysMethod = meta.getClass().getMethod("getEntrypointKeys");
+                                        Collection<?> keys = (Collection<?>) getKeysMethod.invoke(meta);
+                                        Method getEpsMethod = meta.getClass().getMethod("getEntrypoints", String.class);
+                                        for (Object keyObj : keys) {
+                                            String k = String.valueOf(keyObj);
+                                            List<?> eps = (List<?>) getEpsMethod.invoke(meta, k);
+                                            if (eps != null) {
+                                                for (Object ep : eps) {
+                                                    try {
+                                                        addEpMethod.invoke(epStorage, container, k, ep, adapterMap);
+                                                    } catch (Throwable ignored) {}
+                                                }
+                                            }
+                                        }
+                                    } catch (Throwable ignored) {}
+                                }
                                 MutoLog.info("synced {} into FabricLoader", mod.id());
                             }
                         } catch (Throwable ex) {
@@ -578,15 +1068,17 @@ public final class ReloadEngine {
             Class<?> modContainerInterface = net.fabricmc.loader.api.ModContainer.class;
             Class<?> modMetadataInterface = net.fabricmc.loader.api.metadata.ModMetadata.class;
 
+            me.fy2ne.muto.mods.DiskMod dm = me.fy2ne.muto.mods.ModStateManager.INSTANCE.findDiskMod(mod.id());
             Object metaProxy = java.lang.reflect.Proxy.newProxyInstance(cl, new Class<?>[]{modMetadataInterface}, (proxy, method, args) -> {
                 String name = method.getName();
                 Class<?> ret = method.getReturnType();
-                if ("getId".equals(name) || "getName".equals(name)) return mod.id();
+                if ("getId".equals(name)) return mod.id();
+                if ("getName".equals(name)) return dm != null ? dm.name() : mod.name();
                 if ("getVersion".equals(name)) {
                     return net.fabricmc.loader.api.Version.parse(mod.version().isBlank() ? "1.0.0" : mod.version());
                 }
                 if ("getType".equals(name)) return "fabric";
-                if ("getDescription".equals(name)) return "Dynamically loaded by Muto";
+                if ("getDescription".equals(name)) return dm != null && dm.description() != null ? dm.description() : "";
                 if ("getAuthors".equals(name) || "getContributors".equals(name) || "getLicense".equals(name)) {
                     return List.of();
                 }
@@ -597,7 +1089,10 @@ public final class ReloadEngine {
                 if ("loadsInEnvironment".equals(name)) return Boolean.TRUE;
                 if ("isBuiltin".equals(name)) return Boolean.FALSE;
                 if ("containsCustomValue".equals(name)) return Boolean.FALSE;
-                if ("getIcons".equals(name) || "getIconPath".equals(name)) return Optional.empty();
+                if ("getIconPath".equals(name)) {
+                    return dm != null && dm.iconPath() != null && !dm.iconPath().isBlank() ? Optional.of(dm.iconPath()) : Optional.empty();
+                }
+                if ("getIcons".equals(name)) return Optional.empty();
                 if ("toString".equals(name)) return mod.id() + " " + mod.version();
 
                 if (ret == boolean.class) return Boolean.FALSE;
@@ -699,8 +1194,48 @@ public final class ReloadEngine {
         }
     }
 
+    private Path resolveJarForMod(String modId) {
+        if (modId == null) return null;
+        try {
+            var dm = me.fy2ne.muto.mods.ModStateManager.INSTANCE.findDiskMod(modId);
+            if (dm != null && dm.filePath() != null && java.nio.file.Files.exists(dm.filePath())) {
+                return dm.filePath();
+            }
+        } catch (Throwable ignored) {}
+
+        if (currentSnapshot != null) {
+            ScannedMod sm = currentSnapshot.mods().get(modId);
+            if (sm != null && sm.jarPath() != null) {
+                if (java.nio.file.Files.exists(sm.jarPath())) {
+                    return sm.jarPath();
+                }
+                String name = sm.jarPath().getFileName().toString();
+                for (String ext : List.of(".disabled", ".disactivation", ".discavation", ".deactivation", ".disable", ".off")) {
+                    Path p = sm.jarPath().resolveSibling(name + ext);
+                    if (java.nio.file.Files.exists(p)) return p;
+                }
+            }
+        }
+        Path modsDir = FabricLoader.getInstance().getGameDir().resolve("mods");
+        if (java.nio.file.Files.isDirectory(modsDir)) {
+            try (var stream = java.nio.file.Files.list(modsDir)) {
+                for (Path p : (Iterable<Path>) stream::iterator) {
+                    String fn = p.getFileName().toString();
+                    if (fn.endsWith(".jar") || me.fy2ne.muto.mods.ModStateManager.isDisabledFileName(fn)) {
+                        ScannedMod probed = ModScanner.probe(p);
+                        if (probed != null && modId.equals(probed.id())) {
+                            return p;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+        return null;
+    }
+
     private void notify(Consumer<String> notifier, List<String> logs, String msg) {
         MutoLog.info("stage: {}", msg);
+        me.fy2ne.muto.dev.MutoDev.log("STAGE", msg);
         if (logs != null) logs.add(msg);
         if (notifier != null) {
             notifier.accept(msg);

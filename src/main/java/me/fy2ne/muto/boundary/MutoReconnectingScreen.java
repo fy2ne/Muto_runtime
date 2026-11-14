@@ -10,20 +10,13 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
+import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MutoReconnectingScreen extends Screen {
-    private static final int DARK_BG = 0xEE0B0F19;
-    private static final int CARD_BG = 0xFF141923;
-    private static final int CARD_BORDER = 0x30FFFFFF;
-    private static final int PROGRESS_BG = 0xFF1E2536;
-    private static final int PROGRESS_FILL = 0xFF38BDF8;
-    private static final int TEXT_PRIMARY = 0xFFF1F5F9;
-    private static final int TEXT_SECONDARY = 0xFF94A3B8;
-
     private final Screen origin;
     private final Path modsDir;
     private final ServerData targetServer;
@@ -35,7 +28,7 @@ public final class MutoReconnectingScreen extends Screen {
     private final AtomicBoolean reloadStarted = new AtomicBoolean(false);
 
     public MutoReconnectingScreen(Screen origin, Path modsDir, ServerData targetServer, String singleplayerLevelId) {
-        super(Component.literal("Muto Hot Reload"));
+        super(Component.literal("Hot Reload"));
         this.origin = origin;
         this.modsDir = modsDir;
         this.targetServer = targetServer;
@@ -44,13 +37,13 @@ public final class MutoReconnectingScreen extends Screen {
 
     @Override
     protected void init() {
-        int btnW = 120;
+        int btnW = 200;
         int btnH = 20;
         int btnX = (this.width - btnW) / 2;
-        int btnY = (this.height / 2) + 60;
+        int btnY = this.height / 4 + 120 + 12;
 
         this.addRenderableWidget(
-                Button.builder(Component.literal("Cancel to Menu"), btn -> {
+                Button.builder(CommonComponents.GUI_CANCEL, btn -> {
                     if (this.minecraft != null) {
                         this.minecraft.setScreenAndShow(new TitleScreen());
                     }
@@ -117,40 +110,29 @@ public final class MutoReconnectingScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, delta);
 
         renderedProgress += (progress - renderedProgress) * 0.15f;
-        graphics.fill(0, 0, this.width, this.height, DARK_BG);
-
-        int cardW = 340;
-        int cardH = 140;
-        int cardX = (this.width - cardW) / 2;
-        int cardY = (this.height - cardH) / 2 - 10;
-
-        graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, CARD_BG);
-        graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, CARD_BORDER);
-        graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, CARD_BORDER);
-        graphics.fill(cardX, cardY + 1, cardX + 1, cardY + cardH - 1, CARD_BORDER);
-        graphics.fill(cardX + cardW - 1, cardY + 1, cardX + cardW, cardY + cardH - 1, CARD_BORDER);
 
         String hdr = (targetServer != null || singleplayerLevelId != null)
                 ? "Reloading & Rejoining"
                 : "Applying Mod Changes";
-        graphics.centeredText(this.font, Component.literal(hdr), this.width / 2, cardY + 18, TEXT_PRIMARY);
+        graphics.centeredText(this.font, Component.literal("§f§l" + hdr), this.width / 2, this.height / 2 - 46, 0xFFFFFF);
 
         if (targetServer != null) {
-            graphics.centeredText(this.font, Component.literal("Server: " + targetServer.ip), this.width / 2, cardY + 34, TEXT_SECONDARY);
+            graphics.centeredText(this.font, Component.literal("§7Server: " + targetServer.ip), this.width / 2, this.height / 2 - 30, 0xAAAAAA);
         } else if (singleplayerLevelId != null) {
-            graphics.centeredText(this.font, Component.literal("World: " + singleplayerLevelId), this.width / 2, cardY + 34, TEXT_SECONDARY);
+            graphics.centeredText(this.font, Component.literal("§7World: " + singleplayerLevelId), this.width / 2, this.height / 2 - 30, 0xAAAAAA);
         }
 
-        graphics.centeredText(this.font, Component.literal(statusText), this.width / 2, cardY + 56, TEXT_PRIMARY);
+        graphics.centeredText(this.font, Component.literal("§e" + statusText), this.width / 2, this.height / 2 - 12, 0xFFFF55);
 
-        int barW = 280;
-        int barH = 8;
+        int barW = 200;
+        int barH = 5;
         int barX = (this.width - barW) / 2;
-        int barY = cardY + 76;
+        int barY = this.height / 2 + 8;
 
-        graphics.fill(barX, barY, barX + barW, barY + barH, PROGRESS_BG);
+        graphics.fill(barX - 1, barY - 1, barX + barW + 1, barY + barH + 1, 0xFF404040);
+        graphics.fill(barX, barY, barX + barW, barY + barH, 0xFF101010);
         int fillW = Math.max(2, (int) (barW * Math.min(1.0f, renderedProgress)));
-        graphics.fill(barX, barY, barX + fillW, barY + barH, PROGRESS_FILL);
+        graphics.fill(barX, barY, barX + fillW, barY + barH, 0xFF80FF20);
     }
 
     @Override

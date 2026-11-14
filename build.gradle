@@ -23,6 +23,14 @@ dependencies {
 
 
 tasks.named('jar') {
+	manifest {
+		attributes(
+			'Premain-Class': 'me.fy2ne.muto.engine.MutoAgent',
+			'Agent-Class': 'me.fy2ne.muto.engine.MutoAgent',
+			'Can-Retransform-Classes': 'true',
+			'Can-Redefine-Classes': 'true'
+		)
+	}
 	doLast {
 		if (project.hasProperty('mutoSync') || System.getProperty('muto.sync') == 'true') {
 			File runDir = project.file('run')
@@ -177,9 +185,9 @@ publishing {
 					}
 				}
 				scm {
-					connection = "scm:git:git://github.com/fy2ne/muto.git"
-					developerConnection = "scm:git:ssh://github.com:fy2ne/muto.git"
-					url = "https://github.com/fy2ne/muto"
+					connection = "scm:git:git://github.com/fy2ne/Muto-Runtime.git"
+					developerConnection = "scm:git:ssh://github.com:fy2ne/Muto-Runtime.git"
+					url = "https://github.com/fy2ne/Muto-Runtime"
 				}
 			}
 		}
@@ -188,7 +196,7 @@ publishing {
 	repositories {
 		maven {
 			name = "GitHubPackages"
-			url = uri("https://maven.pkg.github.com/fy2ne/muto")
+			url = uri("https://maven.pkg.github.com/fy2ne/Muto-Runtime")
 			credentials {
 				username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_ACTOR")
 				password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")

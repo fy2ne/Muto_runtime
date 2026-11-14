@@ -16,7 +16,7 @@
   --text: #ffffff;
   --text-muted: #888888;
   --text-subtle: #555555;
-  --accent: #f59e0b;
+  --accent: #E52C29;
   --code-bg: #070707;
   --code-border: rgba(255, 255, 255, 0.08);
   --sidebar-w: 260px;
@@ -171,8 +171,8 @@ button {
 }
 
 .sb-brand-logo {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   object-fit: contain;
   display: block;
   flex-shrink: 0;
@@ -531,7 +531,7 @@ button {
 }
 
 .alert-warning {
-  --alert-color: #f59e0b;
+  --alert-color: #E52C29;
 }
 
 .math-block {
@@ -779,18 +779,18 @@ button {
   min-width: 0;
 }
 
-/* === Theme Variants (Yellow Golden for Runtime, Blue #134cff for Menu) === */
+/* === Theme Variants (Crimson Red #E52C29 for Runtime, Blue #134cff for Menu) === */
 .docs-shell.theme-runtime {
-  --accent: #f59e0b;
-  --accent-light: #fbbf24;
-  --star-bright: rgba(245, 158, 11, 0.45);
-  --star-dim: rgba(251, 191, 36, 0.22);
+  --accent: #E52C29;
+  --accent-light: #ff524f;
+  --star-bright: rgba(229, 44, 41, 0.55);
+  --star-dim: rgba(255, 82, 79, 0.25);
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.16);
 }
 
 .docs-shell.theme-runtime .sb-brand-logo {
-  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.2));
+  filter: drop-shadow(0 0 6px rgba(229, 44, 41, 0.3));
 }
 
 .docs-shell.theme-menu {

@@ -21,6 +21,10 @@ import java.util.jar.JarFile;
 public final class ModScanner {
 
     public static List<ScannedMod> scan(Path modsDir) {
+        return scan(modsDir, true);
+    }
+
+    public static List<ScannedMod> scan(Path modsDir, boolean filterDisabled) {
         if (!Files.isDirectory(modsDir)) {
             MutoLog.warn("mods dir missing: {}", modsDir);
             return Collections.emptyList();
@@ -32,8 +36,7 @@ public final class ModScanner {
             for (Path jar : stream) {
                 ScannedMod mod = probe(jar);
                 if (mod != null) {
-                    if (me.fy2ne.muto.mods.DisabledModsRegistry.isDisabled(mod.id())) {
-                        MutoLog.info("mod {} is disabled in registry, excluding from active snapshot", mod.id());
+                    if (filterDisabled && me.fy2ne.muto.mods.ModStateManager.INSTANCE.isModDisabled(mod.id())) {
                         continue;
                     }
                     found.add(mod);
@@ -43,7 +46,7 @@ public final class ModScanner {
             MutoLog.error("scan failed", ex);
         }
 
-        MutoLog.info("scanned {} mod jars in {}", found.size(), modsDir);
+        MutoLog.info("scanned {} mod jars in {} (filterDisabled={})", found.size(), modsDir, filterDisabled);
         return found;
     }
 
@@ -116,9 +119,6 @@ public final class ModScanner {
                 }
 
                 if (modId == null || modId.isEmpty()) return null;
-                if (me.fy2ne.muto.mods.DisabledModsRegistry.isDisabled(modId)) {
-                    return null;
-                }
 
                 Set<String> internalJij = ModDependencyAnalyzer.scanInternalJijIds(jf);
                 List<String> missing = ModDependencyAnalyzer.evaluateDependencies(modId, depends, internalJij);

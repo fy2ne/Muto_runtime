@@ -28,8 +28,14 @@ public final class ResourceHotMount {
                     MutoLog.info("pack repository rescanned");
                 }
 
+                if (client.gui != null && client.gui.overlay() != null) {
+                    MutoLog.info("loading overlay active, deferring pack reload to prevent render crash");
+                    future.complete(null);
+                    return;
+                }
+
                 client.reloadResourcePacks().thenRun(() -> {
-                    MutoLog.info("gl shader and asset pipelines successfully remounted");
+                    MutoLog.info("gl shader and asset pipelines successfully remounted via official reload");
                     future.complete(null);
                 }).exceptionally(ex -> {
                     MutoLog.warn("resource reload exception: {}", ex.getMessage());
