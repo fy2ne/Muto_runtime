@@ -57,13 +57,13 @@
   --primary-btn-hover: #27272a;
   --primary-btn-fg: #fafafa;
 
-  --wm-glow-0: rgba(217, 35, 32, 0.26);
-  --wm-glow-1: rgba(229, 44, 41, 0.14);
-  --wm-glow-2: rgba(15, 23, 42, 0.06);
-  --wm-glow-3: rgba(15, 23, 42, 0.02);
-  --wm-rim-0: rgba(217, 35, 32, 0.35);
-  --wm-rim-1: rgba(229, 44, 41, 0.15);
-  --wm-rim-2: rgba(15, 23, 42, 0.06);
+  --wm-glow-0: rgba(217, 35, 32, 0.45);
+  --wm-glow-1: rgba(255, 255, 255, 0.72);
+  --wm-glow-2: rgba(217, 35, 32, 0.14);
+  --wm-glow-3: rgba(15, 23, 42, 0.045);
+  --wm-rim-0: rgba(217, 35, 32, 0.65);
+  --wm-rim-1: rgba(229, 44, 41, 0.25);
+  --wm-rim-2: rgba(15, 23, 42, 0.08);
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 16px 40px -16px rgba(0, 0, 0, 0.08);
   --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -123,13 +123,13 @@
   --primary-btn-hover: #e4e4e7;
   --primary-btn-fg: #09090b;
 
-  --wm-glow-0: rgba(255, 92, 88, 0.34);
-  --wm-glow-1: rgba(229, 44, 41, 0.16);
-  --wm-glow-2: rgba(255, 255, 255, 0.055);
-  --wm-glow-3: rgba(255, 255, 255, 0.02);
-  --wm-rim-0: rgba(255, 110, 106, 0.45);
-  --wm-rim-1: rgba(229, 44, 41, 0.22);
-  --wm-rim-2: rgba(255, 255, 255, 0.08);
+  --wm-glow-0: rgba(255, 255, 255, 0.9);
+  --wm-glow-1: rgba(235, 48, 44, 0.66);
+  --wm-glow-2: rgba(229, 44, 41, 0.15);
+  --wm-glow-3: rgba(255, 255, 255, 0.035);
+  --wm-rim-0: rgba(255, 255, 255, 0.95);
+  --wm-rim-1: rgba(255, 92, 88, 0.6);
+  --wm-rim-2: rgba(255, 255, 255, 0.09);
 
   --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.5), 0 24px 64px -20px rgba(0, 0, 0, 0.85);
 }

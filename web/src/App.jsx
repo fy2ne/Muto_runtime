@@ -78,8 +78,7 @@ function AppShell() {
       <Navbar
         brandName="Muto"
         brandTag="0.1.0-beta"
-        logoSrc="/logo-runtime.png"
-        logoClass="brightness-0 dark:brightness-100"
+        logoSrc="/logo-nobg.png"
         docsPath="/docs"
       />
 
