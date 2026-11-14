@@ -1,36 +1,42 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/icon.png" />
-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png" />
-    <link rel="apple-touch-icon" href="/icon-dark.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Muto Runtime - Hot-Swap Library for Fabric Mod Developers</title>
-    <meta name="description" content="Developer library and runtime hot-swap pipeline for Fabric mods: runtime Knot classpath injection, MappedRegistry thawing, and a small public API. No in-game UI." />
-    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    <meta name="googlebot" content="index, follow" />
-    <meta name="google-extended" content="index, follow" />
-    <link rel="canonical" href="https://muto.fy2ne.me/" />
-    <meta property="og:title" content="Muto Runtime - Hot-Swap Library for Fabric Mod Developers" />
-    <meta property="og:description" content="Developer library and runtime hot-swap pipeline for Fabric mods. Add, remove, or update mods without restarting the JVM or game client." />
-    <meta property="og:url" content="https://muto.fy2ne.me/" />
-    <meta property="og:image" content="https://muto.fy2ne.me/icon.png" />
+    <title>Muto Runtime — Hot-Swap Fabric Mods Without Restarting</title>
+    <meta
+      name="description"
+      content="Live JVM bytecode retransformation, Knot classloader unlocking, and atomic registry thawing for Fabric 26.x mods."
+    />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..700&family=Newsreader:ital,opsz,wght@0,6..72,400..500;1,6..72,400&display=swap"
+      rel="stylesheet"
+    />
+    <meta name="theme-color" content="#E52C29" />
+    <meta property="og:title" content="Muto Runtime — Zero-Restart Mod Orchestration" />
+    <meta
+      property="og:description"
+      content="Dynamic mod loading, unloading, and bytecode retransformation inside the running Fabric 26.x JVM."
+    />
     <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="Muto Runtime - Hot-Swap Library for Fabric Mods" />
-    <meta name="twitter:description" content="Runtime hot-swap pipeline and developer API for Fabric mods. No in-game UI." />
-    <meta name="twitter:image" content="https://muto.fy2ne.me/icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script>
-      if (location.pathname === '/' || location.pathname === '') {
-        location.replace('/runtime');
-      }
+    <meta property="og:url" content="https://muto.fy2ne.me" />
+    <script>
+      (function () {
+        var t = "dark";
+        try {
+          t = localStorage.getItem("muto-theme") || "dark";
+        } catch (e) {}
+        document.documentElement.setAttribute("data-theme", t);
+        document.documentElement.classList.toggle("dark", t === "dark");
+        document.documentElement.classList.toggle("light", t !== "dark");
+      })();
     </script>
   </head>
-  <body class="bg-black text-white font-sans antialiased">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
