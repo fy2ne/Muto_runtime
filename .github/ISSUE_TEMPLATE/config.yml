@@ -7,5 +7,5 @@ contact_links:
     url: https://modrinth.com/project/muto
     about: Download releases
   - name: Source code
-    url: https://github.com/fy2ne/Muto-Runtime
+    url: https://github.com/fy2ne/Muto_runtime
     about: Browse or contribute to Muto Engine

@@ -29,7 +29,7 @@ import {
   Zap,
 } from "lucide-react";
 
-const RUNTIME_REPO = "https://github.com/fy2ne/Muto-Runtime";
+const RUNTIME_REPO = "https://github.com/fy2ne/Muto_runtime";
 const MENU_REPO = "https://github.com/fy2ne/Muto-Menu";
 const VERSION = "0.1.0-beta";
 
@@ -487,7 +487,7 @@ function ArticleContent({ id }) {
     mavenLocal()
     maven {
         name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/fy2ne/Muto-Runtime")
+        url = uri("https://maven.pkg.github.com/fy2ne/Muto_runtime")
     }
 }
 
@@ -827,7 +827,7 @@ MutoEvents.RELOAD_FINISH.register((endMs, diff, ok, ms, err) -> {
           <p>Apply the watcher script in your mod's <code>build.gradle</code>:</p>
           <CodeSnippet
             filename="build.gradle"
-            code={`apply from: 'https://raw.githubusercontent.com/fy2ne/Muto-Runtime/26.x/muto-watcher.gradle'`}
+            code={`apply from: 'https://raw.githubusercontent.com/fy2ne/Muto_runtime/26.x/muto-watcher.gradle'`}
           />
           <CodeSnippet filename="terminal" code={`./gradlew mutoWatch`} />
         </>

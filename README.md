@@ -8,11 +8,11 @@
 
 [![Minecraft](https://img.shields.io/badge/Minecraft-26.x-E52C29?style=flat-square&logo=minecraft&logoColor=white)](https://fabricmc.net/)
 [![Platform](https://img.shields.io/badge/Platform-Fabric-E52C29?style=flat-square)](https://fabricmc.net/)
-[![Version](https://img.shields.io/badge/Version-0.1.0--beta-E52C29?style=flat-square)](https://github.com/fy2ne/Muto-Runtime/releases)
+[![Version](https://img.shields.io/badge/Version-0.1.0--beta-E52C29?style=flat-square)](https://github.com/fy2ne/Muto_runtime/releases)
 [![Java](https://img.shields.io/badge/Java-25%2B-E52C29?style=flat-square)](https://openjdk.org/)
 [![License](https://img.shields.io/badge/License-LGPL--3.0--only-18181b?style=flat-square)](LICENSE)
 
-[Documentation](https://muto.fy2ne.me) · [Modrinth](https://modrinth.com/mod/muto) · [Issues](https://github.com/fy2ne/Muto-Runtime/issues)
+[Documentation](https://muto.fy2ne.me) · [Modrinth](https://modrinth.com/mod/muto) · [Issues](https://github.com/fy2ne/Muto_runtime/issues)
 
 </div>
 
@@ -46,7 +46,7 @@ repositories {
     }
     maven {
         name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/fy2ne/Muto-Runtime")
+        url = uri("https://maven.pkg.github.com/fy2ne/Muto_runtime")
     }
 }
 

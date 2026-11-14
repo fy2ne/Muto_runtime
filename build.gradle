@@ -185,9 +185,9 @@ publishing {
 					}
 				}
 				scm {
-					connection = "scm:git:git://github.com/fy2ne/Muto-Runtime.git"
-					developerConnection = "scm:git:ssh://github.com:fy2ne/Muto-Runtime.git"
-					url = "https://github.com/fy2ne/Muto-Runtime"
+					connection = "scm:git:git://github.com/fy2ne/Muto_runtime.git"
+					developerConnection = "scm:git:ssh://github.com:fy2ne/Muto_runtime.git"
+					url = "https://github.com/fy2ne/Muto_runtime"
 				}
 			}
 		}
@@ -196,7 +196,7 @@ publishing {
 	repositories {
 		maven {
 			name = "GitHubPackages"
-			url = uri("https://maven.pkg.github.com/fy2ne/Muto-Runtime")
+			url = uri("https://maven.pkg.github.com/fy2ne/Muto_runtime")
 			credentials {
 				username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_ACTOR")
 				password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")

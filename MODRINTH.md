@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/fy2ne/Muto-Runtime/26.x/src/main/resources/assets/muto/logo-nobg.png" width="112" height="112" alt="Muto Runtime Logo" />
+<img src="https://raw.githubusercontent.com/fy2ne/Muto_runtime/26.x/src/main/resources/assets/muto/logo-nobg.png" width="112" height="112" alt="Muto Runtime Logo" />
 
 # Muto Runtime
 
@@ -9,8 +9,8 @@
 [![Minecraft Java Edition](https://img.shields.io/badge/Minecraft-26.x-E52C29?style=flat-square&logo=minecraft&logoColor=white)](https://fabricmc.net/)
 [![Fabric](https://img.shields.io/badge/Platform-Fabric-E52C29?style=flat-square)](https://fabricmc.net/)
 [![Java](https://img.shields.io/badge/Java-25%2B-E52C29?style=flat-square)](https://openjdk.org/)
-[![Release](https://img.shields.io/badge/Version-0.1.0--beta-E52C29?style=flat-square)](https://github.com/fy2ne/Muto-Runtime/releases)
-[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0--only-18181b?style=flat-square)](https://github.com/fy2ne/Muto-Runtime/blob/26.x/LICENSE)
+[![Release](https://img.shields.io/badge/Version-0.1.0--beta-E52C29?style=flat-square)](https://github.com/fy2ne/Muto_runtime/releases)
+[![License: LGPL-3.0](https://img.shields.io/badge/License-LGPL--3.0--only-18181b?style=flat-square)](https://github.com/fy2ne/Muto_runtime/blob/26.x/LICENSE)
 
 </div>
 
@@ -87,7 +87,7 @@ repositories {
     }
     maven {
         name = "GitHubPackages"
-        url = uri("https://maven.pkg.github.com/fy2ne/Muto-Runtime")
+        url = uri("https://maven.pkg.github.com/fy2ne/Muto_runtime")
     }
 }
 
