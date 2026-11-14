@@ -185,7 +185,7 @@ export function RuntimeLanding() {
             <div className="space-y-6 lg:col-span-6">
               <div className="unified-eyebrow">
                 <span className="unified-eyebrow-dot" />
-                <span>v0.1.0-beta // Fabric 26.x · Java 25</span>
+                <span>Live JVM Mod Orchestration // Fabric</span>
               </div>
 
               <h1 className="text-balance font-serif text-4xl font-normal leading-[1.04] tracking-[-0.025em] text-[var(--color-fg-default)] sm:text-5xl lg:text-[4.15rem]">
@@ -502,7 +502,7 @@ export function RuntimeLanding() {
               to="/docs/installation"
               className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-brand-default)] px-5 py-2.5 text-sm font-medium text-white no-underline transition-colors hover:bg-[var(--color-brand-hover)]"
             >
-              <span>Install v0.1.0-beta</span>
+              <span>Get Started</span>
               <ArrowRight className="size-4" />
             </Link>
             <a
